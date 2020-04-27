@@ -1,0 +1,383 @@
+\documentclass[a4paper, 12pt]{article}
+
+\usepackage{fullpage}
+\usepackage[top=0.5in, bottom=1.5in, left=0.5in, right=0.5in, footskip=4em]{geometry}
+\usepackage{amsmath}
+\usepackage{fancyhdr}
+\usepackage{pgfornament}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\usepackage{xspace}
+\usepackage{lastpage}
+\usepackage{multicol}
+\usepackage{blindtext}
+\usepackage{titling}
+\usepackage{standalone}
+\usepackage{siunitx}
+
+\usetikzlibrary{calc}
+\usepackage{lineno}
+\linenumbers
+\makeatletter
+% Make a copy of macros responsible for entering display math mode
+\let\start@align@nopar\start@align
+\let\start@gather@nopar\start@gather
+\let\start@multline@nopar\start@multline
+% Add the "empty line" command to the macros
+\long\def\start@align{\par\start@align@nopar}
+\long\def\start@gather{\par\start@gather@nopar}
+\long\def\start@multline{\par\start@multline@nopar}
+\makeatother
+\setlength{\columnsep}{1cm}
+%opening
+
+\newcommand{\course}{Pattern Recognition}
+\title{Naive Bayes}
+\newcommand{\weekno}{1}
+
+\newcommand{\epv}[1]{\ensuremath{\left< #1 \right>}\xspace}
+\newcommand{\variance}{\ensuremath{\text{Var}}}
+\newcommand{\eout}{\ensuremath{E_\text{out}}\xspace}
+\newcommand{\ein}{\ensuremath{E_\text{in}}\xspace}
+\newcommand{\cx}{\ensuremath{\mathcal{X}}\xspace}
+\newcommand{\cz}{\ensuremath{\mathcal{Z}}\xspace}
+
+
+\sisetup{
+	group-minimum-digits=4,group-separator={,},output-decimal-marker={.}% just uncomment if you want to use comma as the decimal marker!
+}
+
+\pagestyle{fancy}
+\renewcommand{\headrulewidth}{0pt}
+\lfoot{\small{\course}: Week \weekno}
+\rfoot{\small{\thetitle}}
+\rhead{}
+\cfoot{\pgfornament[height=1em, ydelta=-0.4em]{11} \thepage of \pageref{LastPage}  \pgfornament[height=1em, ydelta=-0.4em]{14}}
+
+\DeclareMathOperator{\sign}{sign}
+\newcommand{\vect}[1]{\ensuremath{\mathbf{#1}}\xspace}
+
+\tikzstyle{every picture}+=[remember picture]
+\newcommand{\bwgrid}[1]{
+	\def \aaa #1
+	
+	\foreach \y in {0,1,2} {
+		\foreach \x in {0,1,2} {
+			\pgfmathsetmacro{\clr}{\aaa[\x][\y]}
+			%\message{aaa \clr}
+			\definecolor{MyColor}{rgb}{\clr,\clr,\clr}
+			\path[fill=MyColor] (\x,\y) rectangle ++(1,1); 
+		}
+	}
+	\draw[step=1cm,very thin] (0,0) grid (3,3);	
+}
+
+
+\begin{document}
+\begin{center}
+	\textcolor{orange}{\textsc{\course}}\\
+	\huge\textbf{\textsc{\thetitle}}\\
+	\pgfornament[width=0.7\textwidth, color=white!30!black]{89}
+\end{center}
+
+\begin{center}
+\begin{tabular}{|c|c|c|c|c|c|}
+	\hline Day & Outlook & Temperature & Humidity & Wind & $>1,000$? \\ 
+	\hline 1 & Sunny & Hot & High & Weak & No\\ 
+	\hline 2 & Sunny & Hot & High & Strong & No \\ 
+	\hline 3 & Overcast & Hot & High & Strong & Yes \\ 
+	\hline 4 & Rain & Mild & High & Weak & Yes  \\ 
+	\hline 5 & Rain & Cool & Normal & Weak & Yes  \\ 
+	\hline 6 & Rain & Cool & Normal & Strong & No  \\ 
+	\hline 7 & Overcast & Cool & Normal & Strong & Yes  \\ 
+	\hline 8 & Sunny & Mild & High & Weak & No \\ 
+	\hline 9 & Sunny & Cool & Normal & Weak & Yes  \\ 
+	\hline 10 & Rain & Mild  & Normal & Weak & Yes \\ 
+	\hline 11 & Sunny & Mild & Normal & Strong & Yes \\ 
+	\hline 12 & Overcast & Mild & High & Strong & Yes \\ 
+	\hline 13 & Overcast & Hot & Normal  & Weak & Yes  \\ 
+	\hline 14 & Rain & Mild & High & Strong & No  \\ 
+	\hline 
+\end{tabular} 
+\end{center}
+
+
+After graduating from MUIC you decided to become a circus master. You ran a show every single day. You notice that the weather seems to have something to do with the number of audience. So, you want to 
+
+You want to be able to predict whether that \textbf{given} today's weather would the attendance be more than a thousand. If so you can then, You remember something from Discrete Math called probabilities.
+
+\section*{First Attempt: Table Lookup}
+
+Suppose to day is Rainy Mild High Humidity and Weak Day. It's quite easy to estimate the amount of attendance since you have this kind of day before. The Rainy-Mild-High-Weak day happened before on day 4. So to our best knowledge, assuming that the history will repeat itself, we would say that the attendnace will be more than \num{1000} on this day.
+
+If we collect more and more data, you can then calculate the probability from historical data and do a table look up for the probability. For example, if historically out of 100 Rainy Mild High Humidity and Weak day, 70 of those day you have more than \num{1000} audiences. Then you would say that the probability is 70\%. This is the most intuitive and the best one if you have more than ``enough'' data.
+
+\section*{Problem Statement}
+
+Let us calculate the number of data needed to even cover all the possibilities. We have 3 outlook, 3 temperature, 2 humidity level and 2 wind level. To cover 100 data point each, you will need $3\times3\times2\times2\times100 = \num{3600} \si{days}$. That's a lot of data to cover all the possibilities.
+
+Let us consider the day that we have not seen exactly before: a \textbf{Sunny-Hot-Normal-Weak} day. Brushing off the problem saying that we need 10 more years of data to calculate such a thing would be a bit too premature. 
+
+Even though we have not seen that day exactly before, we have seen some that looks similar before. We have seen sunny days. We have seen hot days. We have seen normal humidity days. We have seen weak wind days. It is just that we have not seen them all together.
+
+It is our hope that by combining the individual information from Sunny days, Hot days, Normal humidity day and weak wind day together. We would be able to calculate the probability that the audicence will be greater than \num{1000}. In other words, we want to ``learn'' from the past data and predict the unknown.
+
+The attributes of the data like Sunny Hot Normal Weak are called \textbf{features} and the our target result whether the audience is greater than \num{1000} or not is called \textbf{classes}. That is we always want to predict the classes from given features. 
+
+It's clear that we need something better than a look up table. Let us use something from Discrete Math class: the conditional probabilities. What we want to calculate is the probability that the there will be more than \num{1000} audiences given that today is a Sunny, Hot Normal, Weak day which is denoted by
+\begin{equation}
+	P( >1000 | \text{Sunny}, \text{Hot}, \text{Normal}, \text{Weak})
+\end{equation}
+
+\section*{Bayes Rule}
+
+Recall from Statistics and Discrete Mathematics class that
+\begin{equation}
+P(A | B) = \frac{P(A \cap B)}{\Pr(B)}
+\label{conddef}
+\end{equation}
+
+This also means that
+\begin{equation}
+P(B | A) = \frac{P(A \cap B)}{\Pr(A)} 
+\end{equation}
+
+Combining the two equations above gives us a very useful relation.
+\begin{equation}
+P(A|B) = \frac{P(B|A) \times P(A)}{P(B)}
+\label{bayes}
+\end{equation}
+This relation is called \emph{Bayes's Theorem}. You will see why this is important later in the next section.
+
+\section*{Chain Rule}
+
+Recall the problem that we are trying to solve has more than 1 variable:
+\begin{equation}
+P( >1000 | \text{Sunny} \cap \text{Hot} \cap \text{Normal} \cap \text{Weak})
+\end{equation}
+
+To make the notaion more succint we will call this
+\begin{equation}
+	P( T | S \cap H \cap N\cap W)
+\end{equation}
+
+
+From the definition we know that
+
+\begin{align}
+	P( T | S \cap H \cap N\cap W) &= \frac{P(S \cap H \cap N\cap W \cap T)}{P(S \cap H \cap N\cap W)}
+\end{align}
+The term $P(S \cap H \cap N\cap W \cap T)$ is impossible to estimate from data but it can be simplify greatly using Equation \ref{conddef}.
+\begin{align}
+	P(S \cap H \cap N\cap W \cap T) = P(S | H,N,W,T) \times P(H, N, W, T)
+\end{align}
+
+We can continue doing this 
+\begin{align}
+P(S \cap H \cap N\cap W \cap T) &= P(S | H,N,W,T) \times P(H, N, W, T) \\
+&= P(S | H,N,W,T) \times P(H| N, W, T) \times P(N, W, T)\\
+&= P(S | H,N,W,T) \times P(H| N, W, T) \times P(N| W, T) \times P(W, T)\\
+&= P(S | H,N,W,T) \times P(H| N, W, T) \times P(N| W, T) \times P(W| T) \times P(T)
+\end{align}
+
+Combining every thing We got
+\begin{align}
+P(T | S \cap H \cap N\cap W) = P(S | H,N,W,T) \times P(H| N, W, T) \times P(N| W, T) \times P(W| T) \frac{\times P(T)}{P(S \cap H \cap N\cap W)}
+\label{full}
+\end{align}
+
+This doesn't really do us much good. Since the terms like $P(S | H,N,W,T)$ is actually quite hard to calculate we will need to resort to lookup table which requires a lot of data.
+
+But the terms like $P(W | T)$ is actually pretty easy to calculate since it just ask you to count that for all the days that we have more than $\num{1000}$ audiences, how many days are weak wind day. In particular, from the table above. There are 9 days with more than \num{1000} audiences. Out of those 9 days, there are 5 days with weak wind. Thus,
+\begin{equation}
+P(W | T) = \frac{5}{9}
+\end{equation}
+
+Our hope is to make those hard-to-calculate term easier to calculate. This is where we use the assumption that all the feature are \emph{conditional independent} of each other. In particular, let us consider closely ther term like
+\[
+	P(S | H, N, W, T)
+\]
+The humidity, wind speed and temperature doesn't really have much to do with how Sunny the day is. The only thing that is not independence is probably the audience level. This is called the \emph{naive} assumption (thus the name of this note: Naive Bayes Classifier.). This means
+\begin{align}
+	P(S | H, N, W, T) = P (S | T)
+\end{align}
+This assumption is not true in general. More often than not we will have to deal with correlated features. Yet this greatly simplify Equation \ref{full} to
+\begin{align}
+P(T | S \cap H \cap N\cap W) = P(S | T) \times P(H| T) \times P(N| T) \times P(W| T) \frac{\times P(T)}{P(S \cap H \cap N\cap W)}
+\end{align}
+
+Each of the $P(S|T)$,$P(H|T)$,$P(N|T)$ and $P(W|T)$ terms are easy to calculate from data. All we need to is to count how many of day that has more than \num{1000} audiences, is a sunny day. The numbers are given below
+\begin{align*}
+P(S|T) &= 2/9\\
+P(H|T) &= 2/9\\
+P(N|T) &= 6/9\\
+P(W|T) &= 5/9
+\end{align*}
+
+\section*{Prior}
+
+Now that we have 4 terms done. There is still $P(T)$ the probability that we will get more than \num{1000} audience. This is called the \emph{Prior} There are two ways to do this each will most likely give you different answers.
+
+One way to do it is to say, given that we don't know anything let us use \emph{equiprobable} assumption that there is a 50\% chance that $T$ will happend and another 50\% chance that $T$ will not happen. If you really have no idea what you are expected to see then this is a good start.
+\[
+	P(T) = 1/2
+\]
+
+Another way is to assume that the data we collect will represent what we are going to see in the future. Thus, $P(T)$, the probability that there will be more than \num{1000} audience can be calculated from the data by just counting the number of days with more than \num{1000} audience. In the table given at the beginning, there are 9 out of 14 days that we have more than \num{1000} people. Therefore we would say that
+\[
+	P(T) = 9/14
+\]
+
+Which one to use is really a philosophical question of whether how much you can trust the distribution in your data: whether it is a good representation of the frequency you are going to see. For example, if you want to make conclusion about entire Thai population but we only sample college student. We definitely can't hope that college students is a good representation what we are going to see in the entire population. But, if we do a good sampling of Thai population demographics then we can justify that our collection represents the population.
+
+For this example, let assume that the data we have is a good representation of what we are going to see.
+
+\section*{Evidence}
+
+$P(S \cap H \cap N\cap W)$ is called the evidence term. With independence assumption, it is actually
+\[
+P(S \cap H \cap N\cap W) = P(S)P(H)P(N)P(W)
+\]
+
+Of course, you can estimate this quantity by counting the number of sunny day from all the sample and so on.  But in reality, you don't really need to. This again relies on the fact that the data we collected will be repeated. In this case is it kind of bad assumption. We will get around this in the next section.
+
+\section*{Naive Bayes Classifier}
+
+The question we want to answer is whether we will have more than \num{1000} audience or not. To decide that, we just need to compare two probabilities.
+\[
+	P(T | S,H,N,W) \text{ VS } P(\lnot T | S,H,N,W)
+\]
+whichever one is greater would be our prediction.
+
+We learn from the discussion above that
+\begin{equation}
+P(T | S,H,N,W) = P(S|T) P(H|T) P(N|T) P(W|T) \frac{P(T)}{P(S,H,N,W)}
+\end{equation}
+and similarly
+\begin{equation}
+P(\lnot T | S,H,N,W) = P(S|\lnot T) P(H|\lnot T) P(N|\lnot T) P(W|\lnot T) \frac{P(\lnot T)}{P(S,H,N,W)}
+\end{equation}
+
+Furthermore, since we know that the audience is either $>\num{1000}$ or $\le \num{1000}$. We have
+\begin{align}
+1 = &  P(T | S,H,N,W) + P(\lnot T | S,H,N,W)\\
+1 = & P(S|T) P(H|T) P(N|T) P(W|T) \frac{P(T)}{P(S,H,N,W)} \\
+& + P(S|\lnot T) P(H|\lnot T) P(N|\lnot T) P(W|\lnot T) \frac{P(\lnot T)}{P(S,H,N,W)} 
+\end{align}
+
+This also means
+\begin{align}
+P(S,H,N,W) = & P(S|T) P(H|T) P(N|T) P(W|T) P(T) \\
+& + P(S|\lnot T) P(H|\lnot T) P(N|\lnot T) P(W|\lnot T) P(\lnot T)
+\end{align}
+
+\section*{Example}
+Since there are so many pieces needed to calculate
+\[
+P(T | S,H,N,W) =  P(S|T) P(H|T) P(N|T) P(W|T) \frac{P(T)}{P(S,H,N,W)}
+\]
+Let us go through the process.
+
+First Let us calculate
+\[
+P(S|T) P(H|T) P(N|T) P(W|T) = \frac{2}{9}\times\frac{2}{9} \times \frac{6}{9} \times \frac{5}{9} = 0.0183
+\]
+
+Then,
+\[
+P(S| \lnot T) P(H| \lnot T) P(N|\lnot T) P(W|\lnot T) = \frac{3}{5}\times\frac{2}{5} \times \frac{1}{5} \times \frac{2}{5} = 0.0192
+\]
+
+Next, $P(T) = 9/14$ since out of 14 days, there are 9 days which we have more than \num{1000} audiences. Thus $P(\lnot T) = 5/14$ since the other 5 days we have less than \num{1000} audiences.
+
+Therefore, the evidence term/normalization factor is
+\[
+	P(S, H, N, W) = 0.183 \times \frac{9}{14} + 0.192 \times \frac{5}{14} = 0.186
+\]
+
+Thus,
+\[
+	P(T | S, H, N, W) = \frac{0.183 \times \frac{9}{14}}{0.186} = 0.632
+\]
+and(you can do just one minus the above answer too but we will be a pedagogical here)
+\[
+	P(\lnot T | S, H, N, W) = \frac{0.192 \times \frac{5}{14}}{0.186} = 0.368
+\]
+
+So, with Naive Bayes Classifier we would say that the probability that we will have more than \num{1000} audience is 0.632.
+
+Remember that we made a very critical \emph{assumption} here that all the features are \emph{independent}. This is not true in general. However, even when this assumption is not satisfied the Naives Bayes classifier usually do a pretty good job.
+
+As you can see, the calculation is quite tedious. It sounds more like a job for computer to do.
+
+\section*{Multinomial Bayes}
+
+The whole idea of classifier is to estimate the probability. This depends on how we model the problem. In the last section we model the problem as having a bunch of conditionally independent features each contribute independent to the result. Let us consider the problem of classifying spam email.
+
+The simplest way\footnote{try google for more sophisticated ways.} to do this is to count the frequnecy of word that appear in the document. This would be our features. For example, a spam email reads.
+\begin{center}
+	Cheap Windows legit cheap act now.
+\end{center}
+this can be represent using \emph{feature vector}
+\begin{center}
+	$\vec{x}$ = \{cheap: 2, windows: 1, act: 1, now: 1\}
+\end{center}
+
+Thus, our job of classifying spam email becomes comparing
+\begin{center}
+	$P(\text{Spam}|\vec{x})$ VS $P(\text{Ham}|\vec{x})$
+\end{center}
+which means given all the frequencies we found in the given email, which probability is greater: spam or ham?
+
+The problem is now a bit different from before since we started to have frequencies coming into play. You could instead of using frequency you could use a boolean whether a word appear or not and we will be back with Naive Bayes scenario. Let us be fancy here and actually exploit frequency instead of just boolean.
+
+Remember that things like the probability that a word ``cheap" will appear in a spam email
+\[
+	P(\text{cheap appear} | \text{spam})
+\]
+is very easy to deduce from data. We just count the number of ``cheap'' from all spam email and divide by the total number of words that appear in all spam email\footnote{Normally clean up the data and get rid of article and conjunction words like a, the, an, of, in, on, at, etc. and lower case all the words.}.
+
+Recall chain rule
+\begin{align}
+	P(\text{Spam} | \vec{x}) \propto& P(\text{cheap}|\text{spam})^2 \times P(\text{windows}|\text{spam})\times \nonumber\\
+	&  P(\text{act}|\text{spam}) \times P(\text{now}|\text{spam}) \times P(\text{spam})
+\end{align}
+Note that we use the symbol $\propto$ which means proportional to since we ignore two things. The combinatoric factor and the evidence term\footnote{Look up wikipedia if you wonder about them}. But we don't really need to care about that since the combinatoric factor is the same for both spam and ham case. The square on $P(\text{cheap}|\text{spam})$ term indicate that the word cheap appear twice.
+
+Similarly,
+\begin{align}
+P(\text{Spam} | \vec{x}) \propto& P(\text{cheap}|\text{spam})^2 \times P(\text{windows}|\text{spam})\times \nonumber\\
+&  P(\text{act}|\text{spam}) \times P(\text{now}|\text{spam}) \times P(\text{spam})
+\end{align}
+
+If we really need the probability we can use the fact that
+\[
+	P(\text{Spam} | \vec{x}) + P(\text{Ham} | \vec{x}) = 1
+\]
+and then use the sum of the two number to normalize the probability.
+
+\section*{Unseen Words}
+
+Let us see what would happen if we see the word we never seen before. Remember that we estimate
+\[
+	P(\text{word} | \text{spam})
+\]
+by counting the number words that appear in the spam. But if we want to decide an email like 
+\begin{center}
+	Let meet \emph{tommorriw} morning
+\end{center}
+Note that the tommorrow is misspelled. With the method of counting words in the training data set we will find that
+\[
+	P(\text{tomorriw} | \text{spam})=P(\text{tomorriw} | \text{spam})=0
+\]
+which will make both $P(\text{spam}|\vec{x})$ and $P(\text{ham}|\vec{x})$ zero!! and you have no idea whether it is a spam or ham.
+
+That's a really bad situation. Let us think back a little bit, the more sensible way to treat unseen words is to ignore it and just use the rest of the words. That means all we need to do is assign some small non-zero number e.g. 1/totalnumber of words to both $P(\text{unseen}|\text{spam})$ and $P(\text{unseen}|\text{ham})$. Since multiplying by the same non-zero number doesn't change the ranking of the two we have the desirable effect.\footnote{Some people add the number of word found by 1 and normalize by the number of vocabulary. This gives a similar effect. But behave better in edge cases. We won't get there.}
+
+
+In data analysis job, we will often see some details like this very often. There is no way to get around it except to actually understand what we are doing. If you use the algorithm like magic with no real understanding. More often than not you will get unexpected answer. The purpose of this class is making sure you don't use it as magical formula and give you enough basic to understand more magic.
+
+
+
+
+\end{document}
